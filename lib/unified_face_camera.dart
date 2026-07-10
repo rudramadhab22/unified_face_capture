@@ -5,14 +5,20 @@ import 'package:flutter/services.dart';
 import 'src/providers/face_camera_view_model.dart';
 import 'src/services/face_detector_service.dart';
 import 'src/widgets/face_overlay.dart';
-import 'src/widgets/shutter_button.dart';
+
 import 'unified_face_camera_platform_interface.dart';
 
+export 'src/models/camera_aspect_ratio.dart';
 export 'src/models/face_entity.dart';
 export 'src/providers/face_camera_view_model.dart';
 export 'src/services/face_detector_service.dart';
 export 'src/widgets/face_overlay.dart';
 export 'src/widgets/shutter_button.dart';
+
+import 'src/models/camera_aspect_ratio.dart';
+import 'src/widgets/camera_controls_overlay.dart';
+import 'src/widgets/camera_saving_overlay.dart';
+import 'src/widgets/face_feedback_text.dart';
 
 class UnifiedFaceCamera extends StatefulWidget {
   const UnifiedFaceCamera({
@@ -50,11 +56,6 @@ class UnifiedFaceCamera extends StatefulWidget {
   State<UnifiedFaceCamera> createState() => _UnifiedFaceCameraState();
 }
 
-enum CameraAspectRatio {
-  ratio16_9,
-  ratio4_3,
-  ratio1_1,
-}
 
 class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
   CameraController? _cameraController;
@@ -250,29 +251,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
     });
   }
 
-  IconData _getFlashIcon() {
-    switch (_flashMode) {
-      case FlashMode.off:
-        return Icons.flash_off;
-      case FlashMode.auto:
-        return Icons.flash_auto;
-      case FlashMode.always:
-        return Icons.flash_on;
-      case FlashMode.torch:
-        return Icons.flashlight_on;
-    }
-  }
 
-  String _getAspectRatioLabel() {
-    switch (_aspectRatio) {
-      case CameraAspectRatio.ratio16_9:
-        return '16:9';
-      case CameraAspectRatio.ratio4_3:
-        return '4:3';
-      case CameraAspectRatio.ratio1_1:
-        return '1:1';
-    }
-  }
 
   Future<void> _capture() async {
     if (!_viewModel.isQualityMet || _isSaving || _isSwitching) return;
@@ -405,7 +384,8 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
                   ListenableBuilder(
                     listenable: _viewModel,
                     builder: (context, _) {
-                      final previewAspectRatio = _cameraController?.value.aspectRatio ?? 1.0;
+                      final previewAspectRatio =
+                          _cameraController?.value.aspectRatio ?? 1.0;
                       return FaceOverlay(
                         faces: _viewModel.detectedFaces,
                         imageSize: _viewModel.lastImageSize,
@@ -423,83 +403,38 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
           ),
         ),
 
-        // ── Top Controls ──────────────────────────────────────────────────
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 8,
-          left: 16,
-          right: 16,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              // Flash Toggle Button
-              GestureDetector(
-                onTap: _toggleFlash,
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.black54,
-                  ),
-                  child: Icon(
-                    _getFlashIcon(),
-                    color: Colors.white,
-                    size: 24,
-                  ),
-                ),
-              ),
-
-              // Aspect Ratio Toggle Button
-              GestureDetector(
-                onTap: _toggleAspectRatio,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: Colors.black54,
-                  ),
-                  child: Text(
-                    _getAspectRatioLabel(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // ── Status Message ────────────────────────────────────────────────
+        // ── Camera Controls (Top & Bottom) ────────────────────────────────
         ListenableBuilder(
           listenable: _viewModel,
           builder: (context, _) {
-            final msg = _viewModel.failureMessage;
-            if (msg.isEmpty) return const SizedBox.shrink();
+            return CameraControlsOverlay(
+              flashOn: _flashMode == FlashMode.torch || _flashMode == FlashMode.always,
+              onToggleFlash: _toggleFlash,
+              aspectRatio: _aspectRatio,
+              onToggleAspectRatio: _toggleAspectRatio,
+              isSwitching: _isSwitching,
+              isCooldown: _isCooldown,
+              onSwitchCamera: _switchCamera,
+              isQualityMet: _viewModel.isQualityMet,
+              isSaving: _isSaving,
+              onCapture: _capture,
+              onClose: widget.onClose,
+            );
+          },
+        ),
+
+        // ── Status Message / Feedback Text ────────────────────────────────
+        ListenableBuilder(
+          listenable: _viewModel,
+          builder: (context, _) {
             return Positioned(
-              top: MediaQuery.of(context).padding.top + 70,
+              bottom: 110,
               left: 16,
               right: 16,
               child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.black54,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    msg,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+                child: FaceFeedbackText(
+                  message: _isCooldown ? 'Validating new camera…' : _viewModel.failureMessage,
+                  isQualityMet: _viewModel.isQualityMet && !_isCooldown,
                 ),
               ),
             );
@@ -511,16 +446,16 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
           listenable: _viewModel,
           builder: (context, _) {
             final score = _viewModel.lastScore;
-            if (score < 0) return const SizedBox.shrink();
+            if (score < 0 || _isCooldown) return const SizedBox.shrink();
             return Positioned(
-              bottom: 130,
+              bottom: 160,
               left: 0,
               right: 0,
               child: Center(
                 child: Text(
                   'Liveness: ${score.toStringAsFixed(2)}',
                   style: TextStyle(
-                    color: score >= 0.88 ? Colors.greenAccent : Colors.orange,
+                    color: score >= 0.85 ? Colors.greenAccent : Colors.orange,
                     fontSize: 12,
                   ),
                 ),
@@ -529,120 +464,8 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
           },
         ),
 
-        // ── Cooldown Banner ───────────────────────────────────────────────
-        if (_isCooldown)
-          Positioned(
-            bottom: 110,
-            left: 0,
-            right: 0,
-            child: Center(
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: const Text(
-                  'Validating new camera…',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-
-        // ── Bottom Controls ───────────────────────────────────────────────
-        Positioned(
-          bottom: 36,
-          left: 0,
-          right: 0,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 40),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                // Switch camera
-                GestureDetector(
-                  onTap: (_isSwitching || _isCooldown) ? null : _switchCamera,
-                  child: Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white.withValues(alpha: 0.15),
-                    ),
-                    child: Icon(
-                      Icons.flip_camera_ios,
-                      color: (_isSwitching || _isCooldown) ? Colors.white38 : Colors.white,
-                      size: 26,
-                    ),
-                  ),
-                ),
-
-                // Shutter
-                ListenableBuilder(
-                  listenable: _viewModel,
-                  builder: (context, _) {
-                    final enabled = _viewModel.isQualityMet &&
-                        !_isSwitching &&
-                        !_isSaving &&
-                        !_isCooldown;
-                    return ShutterButton(
-                      isEnabled: enabled,
-                      onTap: enabled ? _capture : null,
-                    );
-                  },
-                ),
-
-                // Close Button or Spacer
-                if (widget.onClose != null)
-                  GestureDetector(
-                    onTap: widget.onClose,
-                    child: Container(
-                      width: 52,
-                      height: 52,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.15),
-                      ),
-                      child: const Icon(
-                        Icons.close,
-                        color: Colors.white,
-                        size: 26,
-                      ),
-                    ),
-                  )
-                else
-                  const SizedBox(width: 52),
-              ],
-            ),
-          ),
-        ),
-
         // ── Saving overlay ────────────────────────────────────────────────
-        if (_isSaving)
-          Container(
-            color: Colors.black54,
-            child: const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 16),
-                  Text(
-                    'Processing Verification...',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+        CameraSavingOverlay(isSaving: _isSaving),
       ],
     );
   }
