@@ -14,6 +14,7 @@ class CameraControlsOverlay extends StatelessWidget {
   final bool isSaving;
   final VoidCallback onCapture;
   final VoidCallback? onClose;
+  final bool showAspectRatioOption;
 
   const CameraControlsOverlay({
     super.key,
@@ -28,6 +29,7 @@ class CameraControlsOverlay extends StatelessWidget {
     required this.isSaving,
     required this.onCapture,
     this.onClose,
+    this.showAspectRatioOption = true,
   });
 
   @override
@@ -60,26 +62,27 @@ class CameraControlsOverlay extends StatelessWidget {
                 ),
               ),
               // Aspect Ratio Button
-              GestureDetector(
-                onTap: onToggleAspectRatio,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    color: Colors.black.withValues(alpha: 0.5),
-                  ),
-                  child: Text(
-                    _getAspectRatioString(aspectRatio),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w600,
+              if (showAspectRatioOption)
+                GestureDetector(
+                  onTap: onToggleAspectRatio,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      color: Colors.black.withValues(alpha: 0.5),
+                    ),
+                    child: Text(
+                      _getAspectRatioString(aspectRatio),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ),
-              ),
             ],
           ),
         ),

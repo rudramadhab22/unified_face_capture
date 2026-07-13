@@ -356,18 +356,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
     final isFront =
         _cameraController!.description.lensDirection == CameraLensDirection.front;
 
-    double targetRatio;
-    switch (_aspectRatio) {
-      case CameraAspectRatio.ratio16_9:
-        targetRatio = 9 / 16;
-        break;
-      case CameraAspectRatio.ratio4_3:
-        targetRatio = 3 / 4;
-        break;
-      case CameraAspectRatio.ratio1_1:
-        targetRatio = 1 / 1;
-        break;
-    }
+    const targetRatio = 3 / 4; // Strictly 4:3
 
     return Stack(
       fit: StackFit.expand,
@@ -419,6 +408,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
               isSaving: _isSaving,
               onCapture: _capture,
               onClose: widget.onClose,
+              showAspectRatioOption: false, // Hide aspect ratio option
             );
           },
         ),
