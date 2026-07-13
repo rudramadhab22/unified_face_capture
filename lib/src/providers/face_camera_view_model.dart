@@ -236,7 +236,7 @@ class FaceCameraViewModel extends ChangeNotifier {
       
       if (maxScore >= 0) {
         if (!isReal) {
-          _failureMessage = "Anti-spoof score low: ${maxScore.toStringAsFixed(2)}";
+          _failureMessage = "Spoofing detected. Please use a live face.";
         }
       } else {
         _failureMessage = "Plugin returned no score";
