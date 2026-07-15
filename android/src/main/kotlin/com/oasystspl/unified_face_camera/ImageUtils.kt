@@ -1,6 +1,7 @@
 package com.oasystspl.unified_face_camera
 
 import android.graphics.*
+import androidx.exifinterface.media.ExifInterface
 import java.io.File
 import java.io.FileOutputStream
 import java.text.SimpleDateFormat
@@ -15,8 +16,40 @@ import java.util.*
 object ImageUtils {
 
     /**
+     * Returns the rotation degrees encoded in the EXIF orientation tag of [filePath].
+     */
+    private fun getExifRotationDegrees(filePath: String): Int {
+        return try {
+            val exif = ExifInterface(filePath)
+            when (exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)) {
+                ExifInterface.ORIENTATION_ROTATE_90  -> 90
+                ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                else -> 0
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("UnifiedFaceCamera", "Could not read EXIF orientation: $e")
+            0
+        }
+    }
+
+    /**
+     * Rotates [bitmap] by [degrees] and returns the new bitmap (recycles the old one).
+     */
+    private fun rotateBitmap(bitmap: Bitmap, degrees: Int): Bitmap {
+        if (degrees == 0) return bitmap
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        if (rotated !== bitmap) bitmap.recycle()
+        return rotated
+    }
+
+    /**
      * Embeds a date/time timestamp onto the image located at [imagePath] and
      * overwrites it with a JPEG-compressed version.
+     *
+     * Reads the EXIF orientation tag and rotates the bitmap so the final
+     * saved image is always in the correct (portrait) orientation.
      *
      * @return The absolute path of the updated image, or `null` on failure.
      */
@@ -32,8 +65,17 @@ object ImageUtils {
         }
 
         return try {
-            val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+            // Read EXIF rotation BEFORE decoding (ExifInterface needs the file path)
+            val rotationDegrees = getExifRotationDegrees(file.absolutePath)
+
+            val rawBitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+
+            // Rotate to portrait if the sensor wrote it sideways
+            val bitmap = rotateBitmap(rawBitmap, rotationDegrees)
+
             val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            if (mutableBitmap !== bitmap) bitmap.recycle()
+
             val canvas = Canvas(mutableBitmap)
 
             // ── Timestamp text paint ────────────────────────────────────────
@@ -89,11 +131,10 @@ object ImageUtils {
 
             // ── Save overwriting the original file ──────────────────────────
             FileOutputStream(file).use { out ->
-                mutableBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                mutableBitmap.compress(Bitmap.CompressFormat.JPEG, 97, out)
                 out.flush()
             }
 
-            bitmap.recycle()
             mutableBitmap.recycle()
             file.absolutePath
         } catch (e: Exception) {

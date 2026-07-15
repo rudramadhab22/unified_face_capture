@@ -102,7 +102,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
 
       _cameraController = CameraController(
         target,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
             ? ImageFormatGroup.nv21
@@ -176,7 +176,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
 
       _cameraController = CameraController(
         next,
-        ResolutionPreset.medium,
+        ResolutionPreset.high,
         enableAudio: false,
         imageFormatGroup: Platform.isAndroid
             ? ImageFormatGroup.nv21
