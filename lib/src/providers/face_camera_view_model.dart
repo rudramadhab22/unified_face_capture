@@ -45,7 +45,7 @@ class FaceCameraViewModel extends ChangeNotifier {
   static const double _maxYaw             = 25.0;
   static const double _maxPitch           = 25.0;
   static const double _maxRoll            = 27.0;
-  static const double _minEyeOpenProb     = 0.60;
+  static const double _minEyeOpenProb     = 0.0;
   static const int    _minContourPoints   = 40;
   static const double _minEyeWidthRatio   = 0.25; 
   static const double _maxEyeWidthRatio   = 0.70; 
