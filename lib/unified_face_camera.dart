@@ -2,6 +2,8 @@ import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_exif_rotation/flutter_exif_rotation.dart';
+import 'package:image/image.dart' as img;
 import 'src/providers/face_camera_view_model.dart';
 import 'src/services/face_detector_service.dart';
 import 'src/widgets/face_overlay.dart';
@@ -266,7 +268,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
           await UnifiedFaceCameraPlatform.instance.requestLocationPermission();
         }
       } catch (e) {
-        debugPrint('Location permission request failed: $e');
+        //debugPrint('Location permission request failed: $e');
       }
 
       // 2. Fetch current Location using Method Channel
@@ -279,19 +281,34 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
           longitude = loc['longitude'];
         }
       } catch (e) {
-        debugPrint('Failed to fetch location from Method Channel: $e');
+        //debugPrint('Failed to fetch location from Method Channel: $e');
       }
 
       await _safeStopStream(_cameraController);
       final XFile file = await _cameraController!.takePicture();
 
-      debugPrint('Picture taken: ${file.path}');
-      debugPrint('Adding native timestamp with lat: $latitude, lng: $longitude...');
+      // debugPrint('Picture taken: ${file.path}');
+
+      // 1. Fix EXIF Rotation using plugin
+      //debugPrint('Fixing EXIF rotation...');
+      File fixedFile = await FlutterExifRotation.rotateImage(path: file.path);
+
+      // 2. Force Portrait if still landscape
+      // debugPrint('Checking for landscape orientation...');
+      final bytes = await fixedFile.readAsBytes();
+      img.Image? decodedImage = img.decodeImage(bytes);
+      if (decodedImage != null && decodedImage.width > decodedImage.height) {
+       // debugPrint('Image is landscape (${decodedImage.width}x${decodedImage.height}), rotating to portrait...');
+        decodedImage = img.copyRotate(decodedImage, angle: 90);
+        await fixedFile.writeAsBytes(img.encodeJpg(decodedImage));
+      }
+
+     // debugPrint('Adding native timestamp with lat: $latitude, lng: $longitude...');
 
       final String? timestampedPath = await UnifiedFaceCameraPlatform.instance
-          .addTimestamp(file.path, latitude: latitude, longitude: longitude);
+          .addTimestamp(fixedFile.path, latitude: latitude, longitude: longitude);
 
-      debugPrint('Timestamped path: $timestampedPath');
+     // debugPrint('Timestamped path: $timestampedPath');
 
       _viewModel.resetOnCapture();
       widget.onCapture(timestampedPath ?? file.path);
