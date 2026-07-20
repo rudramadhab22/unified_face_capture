@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -23,6 +24,7 @@ class FaceCameraViewModel extends ChangeNotifier {
   String _failureMessage = "";
   double _lastScore = 0.0;
   DateTime? _lastAntiSpoofTime;
+  DateTime? _lastDetectionTime;
   Rect? _lastFaceRect;
   bool _disposed = false;
 
@@ -36,6 +38,7 @@ class FaceCameraViewModel extends ChangeNotifier {
   CameraImage?   get currentAnalysisImage => _currentAnalysisImage;
   String get failureMessage       => _failureMessage;
   double get lastScore            => _lastScore;
+  DateTime? get lastDetectionTime => _lastDetectionTime;
   Size? get lastImageSize         => _lastImageSize;
   InputImageRotation? get lastRotation => _lastRotation;
 
@@ -50,7 +53,7 @@ class FaceCameraViewModel extends ChangeNotifier {
   static const double _minEyeWidthRatio   = 0.25; 
   static const double _maxEyeWidthRatio   = 0.70; 
   static const double _maxNoseLateralShift = 0.20; 
-  static const double _antiSpoofingThreshold = 0.88;
+  static const double _antiSpoofingThreshold = 0.80;
 
   // ── Blink Detection state ────────────────────────────────────────────────────
   bool _seenOpen = false;
@@ -95,6 +98,7 @@ class FaceCameraViewModel extends ChangeNotifier {
       _failureMessage = "";
 
       if (faces.isNotEmpty) {
+        _lastDetectionTime = DateTime.now();
         final face = faces.first;
 
         if (_lastFaceRect != null) {
@@ -199,7 +203,10 @@ class FaceCameraViewModel extends ChangeNotifier {
 
       final int width = image.width;
       final int height = image.height;
-      final int expectedSize = (width * height * 1.5).toInt();
+      
+      final int expectedSize = Platform.isAndroid 
+          ? (width * height * 1.5).toInt() 
+          : (width * height * 4);
       
       Uint8List processedBytes;
       if (rawBytes.length > expectedSize) {

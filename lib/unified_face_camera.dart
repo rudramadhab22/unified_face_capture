@@ -256,7 +256,14 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
 
 
   Future<void> _capture() async {
-    if (!_viewModel.isQualityMet || _isSaving || _isSwitching) return;
+    final lastDetection = _viewModel.lastDetectionTime;
+    final isStale = lastDetection == null || 
+        DateTime.now().difference(lastDetection).inMilliseconds > 400;
+
+    if (!_viewModel.isQualityMet || _isSaving || _isSwitching || isStale) {
+      if (isStale) debugPrint('Capture blocked: detection is stale');
+      return;
+    }
 
     setState(() => _isSaving = true);
     try {
