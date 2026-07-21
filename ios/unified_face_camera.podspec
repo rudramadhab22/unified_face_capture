@@ -5,13 +5,14 @@
 Pod::Spec.new do |s|
   s.name             = 'unified_face_camera'
   s.version          = '0.0.1'
-  s.summary          = 'A new Flutter project.'
+  s.summary          = 'Flutter camera plugin with face detection and liveness checks.'
   s.description      = <<-DESC
-A new Flutter project.
+Flutter camera plugin with ML Kit face detection, liveness anti-spoofing,
+quality gates, and native timestamp embedding with optional GPS.
                        DESC
-  s.homepage         = 'http://example.com'
+  s.homepage         = 'https://github.com/rudramadhab22/unified_face_capture'
   s.license          = { :file => '../LICENSE' }
-  s.author           = { 'Your Company' => 'email@example.com' }
+  s.author           = { 'OASYSTSPL' => 'https://github.com/rudramadhab22' }
   s.source           = { :path => '.' }
   s.source_files = 'Classes/**/*'
   s.dependency 'Flutter'

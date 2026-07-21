@@ -1,8 +1,16 @@
 name: unified_face_camera
-description: "A new Flutter project."
+description: >-
+  Flutter camera plugin with ML Kit face detection, liveness anti-spoofing,
+  quality gates, and native timestamp embedding with optional GPS.
 version: 0.0.1
 homepage: https://github.com/rudramadhab22/unified_face_capture
 repository: https://github.com/rudramadhab22/unified_face_capture
+license: MIT
+topics:
+  - camera
+  - face-detection
+  - liveness
+  - mlkit
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -15,7 +23,7 @@ dependencies:
   camera: ^0.11.0
   google_mlkit_face_detection: ^0.13.1  # Do not use ^0.11.1
   google_mlkit_commons: ^0.11.1         # Avoids the MLKitVision error
-  face_anti_spoofing_detector:
+  face_anti_spoofing_detector: ^0.0.4
   geolocator: ^13.0.1
   path_provider: ^2.1.1
   path: ^1.8.3
