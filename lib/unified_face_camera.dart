@@ -3,7 +3,6 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_exif_rotation/flutter_exif_rotation.dart';
-import 'package:image/image.dart' as img;
 import 'src/providers/face_camera_view_model.dart';
 import 'src/services/face_detector_service.dart';
 import 'src/widgets/face_overlay.dart';
@@ -114,6 +113,13 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
       await _cameraController!.initialize();
       if (!mounted) return;
 
+      // Lock orientation to portrait to ensure photos are normally portrait
+      try {
+        await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      } catch (e) {
+        debugPrint('Lock orientation failed: $e');
+      }
+
       // Sync default flash mode
       try {
         await _cameraController!.setFlashMode(_flashMode);
@@ -188,6 +194,13 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
       await _cameraController!.initialize();
       if (!mounted) return;
 
+      // Lock orientation to portrait to ensure photos are normally portrait
+      try {
+        await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
+      } catch (e) {
+        debugPrint('Lock orientation failed: $e');
+      }
+
       // Sync flash mode to the newly initialized controller
       try {
         await _cameraController!.setFlashMode(_flashMode);
@@ -258,7 +271,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
   Future<void> _capture() async {
     final lastDetection = _viewModel.lastDetectionTime;
     final isStale = lastDetection == null || 
-        DateTime.now().difference(lastDetection).inMilliseconds > 400;
+        DateTime.now().difference(lastDetection).inMilliseconds > 200;
 
     if (!_viewModel.isQualityMet || _isSaving || _isSwitching || isStale) {
       if (isStale) debugPrint('Capture blocked: detection is stale');
@@ -266,69 +279,56 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
     }
 
     setState(() => _isSaving = true);
+
     try {
-      // 1. Check and request location permission using Method Channel
+      // 1. Take picture IMMEDIATELY
+      final XFile file = await _cameraController!.takePicture();
+
+      // 2. Close camera hardware immediately to free UI
+      await _safeStopStream(_cameraController);
+      final oldController = _cameraController;
+      _cameraController = null;
+      if (mounted) {
+        setState(() {
+          _isControllerReady = false;
+        });
+      }
+      await oldController?.dispose();
+
+      // 3. Perform everything else in the background
+      double? latitude;
+      double? longitude;
+
+      // Location checks
       try {
         final hasLocPermission =
             await UnifiedFaceCameraPlatform.instance.checkLocationPermission();
         if (!hasLocPermission) {
           await UnifiedFaceCameraPlatform.instance.requestLocationPermission();
         }
-      } catch (e) {
-        //debugPrint('Location permission request failed: $e');
-      }
-
-      // 2. Fetch current Location using Method Channel
-      double? latitude;
-      double? longitude;
-      try {
         final loc = await UnifiedFaceCameraPlatform.instance.getLocation();
         if (loc != null) {
           latitude = loc['latitude'];
           longitude = loc['longitude'];
         }
       } catch (e) {
-        //debugPrint('Failed to fetch location from Method Channel: $e');
+        debugPrint('Background location fetch failed: $e');
       }
 
-      await _safeStopStream(_cameraController);
-      final XFile file = await _cameraController!.takePicture();
-
-      // debugPrint('Picture taken: ${file.path}');
-
-      // 1. Fix EXIF Rotation using plugin
-      //debugPrint('Fixing EXIF rotation...');
+      // Orientation Fix
+      // Since we locked capture orientation to portraitUp, 
+      // this plugin will finalise the image as a portrait file.
       File fixedFile = await FlutterExifRotation.rotateImage(path: file.path);
 
-      // 2. Force Portrait if still landscape
-      // debugPrint('Checking for landscape orientation...');
-      final bytes = await fixedFile.readAsBytes();
-      img.Image? decodedImage = img.decodeImage(bytes);
-      if (decodedImage != null && decodedImage.width > decodedImage.height) {
-       // debugPrint('Image is landscape (${decodedImage.width}x${decodedImage.height}), rotating to portrait...');
-        decodedImage = img.copyRotate(decodedImage, angle: 90);
-        await fixedFile.writeAsBytes(img.encodeJpg(decodedImage));
-      }
-
-     // debugPrint('Adding native timestamp with lat: $latitude, lng: $longitude...');
-
+      // Native Timestamp
       final String? timestampedPath = await UnifiedFaceCameraPlatform.instance
           .addTimestamp(fixedFile.path, latitude: latitude, longitude: longitude);
-
-     // debugPrint('Timestamped path: $timestampedPath');
 
       _viewModel.resetOnCapture();
       widget.onCapture(timestampedPath ?? file.path);
     } catch (e) {
       debugPrint('Capture failed: $e');
       widget.onError?.call('Capture failed: $e');
-      // Restart stream so the camera stays live after a failed capture
-      if (mounted &&
-          _cameraController != null &&
-          _cameraController!.value.isInitialized &&
-          !_cameraController!.value.isStreamingImages) {
-        _cameraController!.startImageStream(_onFrameAvailable);
-      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
