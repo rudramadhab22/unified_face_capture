@@ -101,37 +101,73 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
               orElse: () => cameras.first,
             );
 
-      _cameraController = CameraController(
-        target,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
-      );
-
-      await _cameraController!.initialize();
+      _cameraController = await _openCamera(target);
+      if (_cameraController == null) {
+        widget.onError?.call('Failed to initialize camera: unsupported resolution');
+        return;
+      }
       if (!mounted) return;
 
-      // Lock orientation to portrait to ensure photos are normally portrait
       try {
         await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
       } catch (e) {
         debugPrint('Lock orientation failed: $e');
       }
 
-      // Sync default flash mode
       try {
         await _cameraController!.setFlashMode(_flashMode);
       } catch (e) {
         debugPrint('Flash mode initial sync failed: $e');
       }
 
-      _cameraController!.startImageStream(_onFrameAvailable);
+      // Prefer auto exposure — helps low-light stability on release builds.
+      try {
+        await _cameraController!.setExposureMode(ExposureMode.auto);
+      } catch (e) {
+        debugPrint('Exposure mode failed: $e');
+      }
+
+      try {
+        await _cameraController!.startImageStream(_onFrameAvailable);
+      } catch (e) {
+        debugPrint('startImageStream failed: $e');
+        widget.onError?.call('Failed to start camera stream: $e');
+        return;
+      }
+      if (!mounted) return;
       setState(() => _isControllerReady = true);
     } catch (e) {
       widget.onError?.call('Failed to initialize camera: $e');
     }
+  }
+
+  /// Tries high → medium → low so older / low-memory devices still open a camera.
+  Future<CameraController?> _openCamera(CameraDescription target) async {
+    const presets = [
+      ResolutionPreset.high,
+      ResolutionPreset.medium,
+      ResolutionPreset.low,
+    ];
+    for (final preset in presets) {
+      final controller = CameraController(
+        target,
+        preset,
+        enableAudio: false,
+        imageFormatGroup: Platform.isAndroid
+            ? ImageFormatGroup.nv21
+            : ImageFormatGroup.bgra8888,
+      );
+      try {
+        await controller.initialize();
+        return controller;
+      } catch (e) {
+        debugPrint('Camera init failed at $preset: $e');
+        try {
+          await controller.dispose();
+        } catch (_) {}
+      }
+    }
+    return null;
   }
 
   void _onFrameAvailable(CameraImage image) {
@@ -140,8 +176,6 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
   }
 
   /// Stops the image stream only if the camera is actually streaming.
-  /// Guards against the CameraException thrown when stopImageStream() is
-  /// called while isStreamingImages == false.
   Future<void> _safeStopStream(CameraController? controller) async {
     if (controller == null) return;
     try {
@@ -161,14 +195,12 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
     });
     _viewModel.forceResetLiveness();
 
-    // Capture the current description BEFORE disposing so we can find the other camera.
     final previousDescription = _cameraController?.description;
 
     try {
       await _safeStopStream(_cameraController);
       final oldController = _cameraController;
       _cameraController = null;
-      // Dispose the old controller first, THEN build the new one.
       await oldController?.dispose();
 
       final cameras = await availableCameras();
@@ -182,37 +214,38 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
         next = cameras.first;
       }
 
-      _cameraController = CameraController(
-        next,
-        ResolutionPreset.high,
-        enableAudio: false,
-        imageFormatGroup: Platform.isAndroid
-            ? ImageFormatGroup.nv21
-            : ImageFormatGroup.bgra8888,
-      );
+      _cameraController = await _openCamera(next);
+      if (_cameraController == null || !mounted) {
+        widget.onError?.call('Failed to switch camera: could not open camera');
+        return;
+      }
 
-      await _cameraController!.initialize();
-      if (!mounted) return;
-
-      // Lock orientation to portrait to ensure photos are normally portrait
       try {
         await _cameraController!.lockCaptureOrientation(DeviceOrientation.portraitUp);
       } catch (e) {
         debugPrint('Lock orientation failed: $e');
       }
 
-      // Sync flash mode to the newly initialized controller
       try {
         await _cameraController!.setFlashMode(_flashMode);
       } catch (e) {
         debugPrint('Flash mode switch sync failed: $e');
       }
 
-      setState(() => _isControllerReady = true);
-      _cameraController!.startImageStream(_onFrameAvailable);
+      try {
+        await _cameraController!.setExposureMode(ExposureMode.auto);
+      } catch (_) {}
 
-      // 3-second cooldown: shutter stays disabled so liveness re-validates
-      // on a fresh set of frames from the new camera.
+      try {
+        await _cameraController!.startImageStream(_onFrameAvailable);
+      } catch (e) {
+        debugPrint('startImageStream after switch failed: $e');
+        widget.onError?.call('Failed to switch camera: $e');
+        return;
+      }
+
+      setState(() => _isControllerReady = true);
+
       setState(() => _isCooldown = true);
       await Future.delayed(const Duration(seconds: 3));
       if (mounted) setState(() => _isCooldown = false);
@@ -269,37 +302,50 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
 
 
   Future<void> _capture() async {
-    final lastDetection = _viewModel.lastDetectionTime;
-    final isStale = lastDetection == null || 
-        DateTime.now().difference(lastDetection).inMilliseconds > 200;
+    final controller = _cameraController;
+    if (controller == null ||
+        !controller.value.isInitialized ||
+        controller.value.isTakingPicture ||
+        !_isControllerReady) {
+      return;
+    }
 
-    if (!_viewModel.isQualityMet || _isSaving || _isSwitching || isStale) {
-      if (isStale) debugPrint('Capture blocked: detection is stale');
+    if (!_viewModel.isQualityMet || _isSaving || _isSwitching || _isCooldown) {
+      return;
+    }
+
+    if (!_viewModel.isDetectionFresh) {
+      _viewModel.setTransientMessage('Hold steady and try again');
+      debugPrint('Capture blocked: detection is stale');
       return;
     }
 
     setState(() => _isSaving = true);
 
     try {
-      // 1. Take picture IMMEDIATELY
-      final XFile file = await _cameraController!.takePicture();
+      // MUST stop the image stream before takePicture (required on many Androids).
+      await _safeStopStream(controller);
 
-      // 2. Close camera hardware immediately to free UI
-      await _safeStopStream(_cameraController);
-      final oldController = _cameraController;
+      if (!controller.value.isInitialized) {
+        throw StateError('Camera disposed before capture');
+      }
+
+      final XFile file = await controller.takePicture();
+
       _cameraController = null;
       if (mounted) {
         setState(() {
           _isControllerReady = false;
         });
       }
-      await oldController?.dispose();
+      try {
+        await controller.dispose();
+      } catch (e) {
+        debugPrint('Controller dispose after capture: $e');
+      }
 
-      // 3. Perform everything else in the background
       double? latitude;
       double? longitude;
-
-      // Location checks
       try {
         final hasLocPermission =
             await UnifiedFaceCameraPlatform.instance.checkLocationPermission();
@@ -315,20 +361,24 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
         debugPrint('Background location fetch failed: $e');
       }
 
-      // Orientation Fix
-      // Since we locked capture orientation to portraitUp, 
-      // this plugin will finalise the image as a portrait file.
       File fixedFile = await FlutterExifRotation.rotateImage(path: file.path);
 
-      // Native Timestamp
-      final String? timestampedPath = await UnifiedFaceCameraPlatform.instance
-          .addTimestamp(fixedFile.path, latitude: latitude, longitude: longitude);
+      String? timestampedPath;
+      try {
+        timestampedPath = await UnifiedFaceCameraPlatform.instance
+            .addTimestamp(fixedFile.path, latitude: latitude, longitude: longitude);
+      } catch (e) {
+        debugPrint('Timestamp overlay failed, returning raw capture: $e');
+      }
 
       _viewModel.resetOnCapture();
-      widget.onCapture(timestampedPath ?? file.path);
+      widget.onCapture(timestampedPath ?? fixedFile.path);
     } catch (e) {
       debugPrint('Capture failed: $e');
       widget.onError?.call('Capture failed: $e');
+      if (mounted && _cameraController == null) {
+        await _initCamera();
+      }
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -336,9 +386,15 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
 
   @override
   void dispose() {
-    _safeStopStream(_cameraController);
-    _cameraController?.dispose();
+    final controller = _cameraController;
+    _cameraController = null;
     _viewModel.dispose();
+    Future<void>(() async {
+      await _safeStopStream(controller);
+      try {
+        await controller?.dispose();
+      } catch (_) {}
+    });
     super.dispose();
   }
 
@@ -428,7 +484,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
               isSwitching: _isSwitching,
               isCooldown: _isCooldown,
               onSwitchCamera: _switchCamera,
-              isQualityMet: _viewModel.isQualityMet,
+              isQualityMet: _viewModel.isQualityMet && _viewModel.isDetectionFresh,
               isSaving: _isSaving,
               onCapture: _capture,
               onClose: widget.onClose,
@@ -447,8 +503,12 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
               right: 16,
               child: Center(
                 child: FaceFeedbackText(
-                  message: _isCooldown ? 'Validating new camera…' : _viewModel.failureMessage,
-                  isQualityMet: _viewModel.isQualityMet && !_isCooldown,
+                  message: _isCooldown
+                      ? 'Validating new camera…'
+                      : _viewModel.failureMessage,
+                  isQualityMet: _viewModel.isQualityMet &&
+                      _viewModel.isDetectionFresh &&
+                      !_isCooldown,
                 ),
               ),
             );
@@ -469,7 +529,7 @@ class _UnifiedFaceCameraState extends State<UnifiedFaceCamera> {
                 child: Text(
                   'Liveness: ${score.toStringAsFixed(2)}',
                   style: TextStyle(
-                    color: score >= 0.85 ? Colors.greenAccent : Colors.orange,
+                    color: score >= 0.80 ? Colors.greenAccent : Colors.orange,
                     fontSize: 12,
                   ),
                 ),

@@ -46,7 +46,7 @@ Most camera plugins give you a preview. This one gives you a **validated capture
 
 ```yaml
 dependencies:
-  unified_face_camera: ^0.0.1
+  unified_face_camera: ^0.0.2
 ```
 
 ### 2. Request permission & show the widget

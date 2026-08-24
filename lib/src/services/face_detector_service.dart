@@ -16,7 +16,7 @@ class FaceDetectionResult {
 class FaceDetectorService {
   final FaceDetector _faceDetector = FaceDetector(
     options: FaceDetectorOptions(
-      performanceMode: FaceDetectorMode.accurate,
+      performanceMode: FaceDetectorMode.fast,
       enableClassification: true,
       enableLandmarks: true,
       enableContours: true,

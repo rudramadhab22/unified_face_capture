@@ -14,12 +14,12 @@ import java.util.*
  */
 object ImageUtils {
 
+    /** Cap decoded bitmap size to reduce OOM risk on older / low-RAM devices. */
+    private const val MAX_BITMAP_DIMENSION = 1920
+
     /**
      * Embeds a date/time timestamp onto the image located at [imagePath] and
      * overwrites it with a JPEG-compressed version.
-     *
-     * Reads the EXIF orientation tag and rotates the bitmap so the final
-     * saved image is always in the correct (portrait) orientation.
      *
      * @return The absolute path of the updated image, or `null` on failure.
      */
@@ -35,16 +35,37 @@ object ImageUtils {
         }
 
         return try {
-            // Orientation and portrait forcing is now handled on the Flutter side
-            // using flutter_exif_rotation and the image library.
-            val bitmap = BitmapFactory.decodeFile(file.absolutePath) ?: return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
 
-            val mutableBitmap = bitmap.copy(Bitmap.Config.ARGB_8888, true)
-            if (mutableBitmap !== bitmap) bitmap.recycle()
+            var sampleSize = 1
+            val outW = bounds.outWidth
+            val outH = bounds.outHeight
+            if (outW > 0 && outH > 0) {
+                while (outW / sampleSize > MAX_BITMAP_DIMENSION ||
+                    outH / sampleSize > MAX_BITMAP_DIMENSION
+                ) {
+                    sampleSize *= 2
+                }
+            }
+
+            val decodeOptions = BitmapFactory.Options().apply {
+                inSampleSize = sampleSize
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            val bitmap = BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+                ?: return null
+
+            val mutableBitmap = if (bitmap.isMutable && bitmap.config == Bitmap.Config.ARGB_8888) {
+                bitmap
+            } else {
+                val copy = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+                if (copy !== bitmap) bitmap.recycle()
+                copy ?: return null
+            }
 
             val canvas = Canvas(mutableBitmap)
 
-            // ── Timestamp text paint ────────────────────────────────────────
             val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.WHITE
                 textSize = mutableBitmap.width / 22f
@@ -52,8 +73,6 @@ object ImageUtils {
                 setShadowLayer(4f, 2f, 2f, Color.BLACK)
             }
 
-            // ── Format: DD-MM-YYYY hh:mm AM/PM ─────────────────────────────
-            // Using "hh" (12-hour) and "a" (AM/PM marker).
             val sdf = SimpleDateFormat("dd-MM-yyyy hh:mm a", Locale.US)
             val timestamp = sdf.format(Date())
 
@@ -72,9 +91,7 @@ object ImageUtils {
             val maxTextWidth = Math.max(boundsTimestamp.width(), boundsLocation.width())
             val lineHeight = boundsTimestamp.height()
             val spacing = lineHeight * 0.4f
-            val totalTextHeight = (lineHeight * 2 + spacing).toInt()
 
-            // ── Semi-transparent background behind text ──────────────────────
             val padding = mutableBitmap.width * 0.02f
             val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                 color = Color.argb(160, 0, 0, 0)
@@ -90,19 +107,19 @@ object ImageUtils {
                 bgPaint
             )
 
-            // Draw timestamp line
             canvas.drawText(timestamp, textX, textY, paint)
-            // Draw location line
             canvas.drawText(locationText, textX, textY + lineHeight + spacing, paint)
 
-            // ── Save overwriting the original file ──────────────────────────
             FileOutputStream(file).use { out ->
-                mutableBitmap.compress(Bitmap.CompressFormat.JPEG, 97, out)
+                mutableBitmap.compress(Bitmap.CompressFormat.JPEG, 92, out)
                 out.flush()
             }
 
             mutableBitmap.recycle()
             file.absolutePath
+        } catch (e: OutOfMemoryError) {
+            android.util.Log.e("UnifiedFaceCamera", "ImageUtils OOM", e)
+            null
         } catch (e: Exception) {
             android.util.Log.e("UnifiedFaceCamera", "ImageUtils Error", e)
             null

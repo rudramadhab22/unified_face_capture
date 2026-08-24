@@ -4,7 +4,7 @@
 #
 Pod::Spec.new do |s|
   s.name             = 'unified_face_camera'
-  s.version          = '0.0.1'
+  s.version          = '0.0.2'
   s.summary          = 'Flutter camera plugin with face detection and liveness checks.'
   s.description      = <<-DESC
 Flutter camera plugin with ML Kit face detection, liveness anti-spoofing,

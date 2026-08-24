@@ -64,7 +64,9 @@ public class UnifiedFaceCameraPlugin: NSObject, FlutterPlugin, CLLocationManager
     let fileURL = URL(fileURLWithPath: imagePath)
     guard FileManager.default.fileExists(atPath: imagePath),
           let imageData = try? Data(contentsOf: fileURL),
-          let uiImage = UIImage(data: imageData) else { return nil }
+          let original = UIImage(data: imageData) else { return nil }
+
+    let uiImage = downscaleIfNeeded(original, maxDimension: 1920)
 
     let formatter = DateFormatter()
     formatter.dateFormat = "dd-MM-yyyy hh:mm a"
@@ -78,7 +80,7 @@ public class UnifiedFaceCameraPlugin: NSObject, FlutterPlugin, CLLocationManager
       locationText = "Location: Not Available"
     }
 
-    let scale = uiImage.scale
+    let scale: CGFloat = 1.0
     UIGraphicsBeginImageContextWithOptions(uiImage.size, false, scale)
     defer { UIGraphicsEndImageContext() }
 
@@ -109,7 +111,6 @@ public class UnifiedFaceCameraPlugin: NSObject, FlutterPlugin, CLLocationManager
     let textX = uiImage.size.width - maxTextWidth - padding * 2
     let textY = uiImage.size.height - totalTextHeight - padding * 2
 
-    // Semi-transparent background
     let bgRect = CGRect(
       x: textX - padding,
       y: textY - padding,
@@ -131,6 +132,20 @@ public class UnifiedFaceCameraPlugin: NSObject, FlutterPlugin, CLLocationManager
       return nil
     }
     return imagePath
+  }
+
+  private func downscaleIfNeeded(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+    let w = image.size.width
+    let h = image.size.height
+    let longest = max(w, h)
+    guard longest > maxDimension, longest > 0 else { return image }
+
+    let scale = maxDimension / longest
+    let newSize = CGSize(width: w * scale, height: h * scale)
+    UIGraphicsBeginImageContextWithOptions(newSize, true, 1.0)
+    defer { UIGraphicsEndImageContext() }
+    image.draw(in: CGRect(origin: .zero, size: newSize))
+    return UIGraphicsGetImageFromCurrentImageContext() ?? image
   }
 
   // MARK: - Permissions

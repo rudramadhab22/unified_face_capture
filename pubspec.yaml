@@ -2,7 +2,7 @@ name: unified_face_camera
 description: >-
   Flutter camera plugin with ML Kit face detection, liveness anti-spoofing,
   quality gates, and native timestamp embedding with optional GPS.
-version: 0.0.1
+version: 0.0.2
 homepage: https://github.com/rudramadhab22/unified_face_capture
 repository: https://github.com/rudramadhab22/unified_face_capture
 license: MIT

@@ -13,7 +13,22 @@ class FaceFeedbackText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (isQualityMet) {
-      return const SizedBox.shrink();
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.green.shade700.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Text(
+          'Ready — tap shutter',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
+          textAlign: TextAlign.center,
+        ),
+      );
     }
 
     if (message.isEmpty) {
